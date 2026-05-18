@@ -40,6 +40,16 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
 
+      # Colocate with the coordinator pod so both share the same RWO PVC attachment.
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  {{- include "llama-cpp.selectorLabels" . | nindent 18 }}
+                  app.kubernetes.io/component: coordinator
+              topologyKey: kubernetes.io/hostname
+
       containers:
         - name: downloader
           image: curlimages/curl:8.7.1
