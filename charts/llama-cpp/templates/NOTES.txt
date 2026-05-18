@@ -72,7 +72,7 @@ llama-cpp has been deployed.
              │  --rpc worker1:50052,worker2:50052,...
   ┌──────────▼──────────┐   ┌────────────────────────┐
   │  rpc-worker (node1) │   │  rpc-worker (node2)    │  ...
-  │  llama-rpc-server   │   │  llama-rpc-server      │
+  │  rpc-server         │   │  rpc-server            │
   └─────────────────────┘   └────────────────────────┘
              ↑
   model-loader Job writes GGUF files to shared PVC

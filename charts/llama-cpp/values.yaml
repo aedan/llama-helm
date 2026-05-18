@@ -1,7 +1,7 @@
 # Default values for the llama-cpp Helm chart.
 # Targets x86_64 CPU-only nodes (no GPU).
 # Multi-node layer distribution uses the llama.cpp RPC backend:
-#   - rpcWorker   DaemonSet runs llama-rpc-server on every labelled node
+#   - rpcWorker   DaemonSet runs rpc-server on every labelled node
 #   - coordinator Deployment runs llama-server; it discovers workers at startup
 #     and connects to them via --rpc, distributing transformer layers across nodes.
 
@@ -147,18 +147,9 @@ server:
 gateway:
   enabled: false
 
-  # Name of the existing Gateway resource in the cluster.
-  # Required when enabled=true.
-  # Find yours with: kubectl get gateways -A
-  name: ""
-
-  # Namespace the Gateway lives in.  Defaults to the release namespace.
-  namespace: ""
-
-  # Listener section name on the Gateway to attach to.
-  # Common values: "https", "http", "web".
-  # Check with: kubectl get gateway <name> -o yaml | grep name:
-  listenerName: "https"
+  name: "flex-gateway"
+  namespace: "envoy-gateway"
+  listenerName: "http-wildcard-listener"
 
   hostname: "llama.api.ord.cloudmunchers.net"
 
