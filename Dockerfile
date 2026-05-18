@@ -19,6 +19,9 @@ WORKDIR /llama.cpp
 
 # GGML_NATIVE=OFF + explicit AVX flags gives a portable binary that runs on
 # any Xeon E5 v3/v4 without relying on the build host's CPU feature detection.
+# LLAMA_RPC=ON registers the llama-rpc-server cmake target (off by default).
+# Build everything rather than named targets to stay robust across llama.cpp
+# cmake reorganisations — only the two required binaries are copied below.
 RUN cmake -B build \
       -DCMAKE_BUILD_TYPE=Release \
       -DGGML_NATIVE=OFF \
@@ -28,9 +31,8 @@ RUN cmake -B build \
       -DGGML_FMA=ON \
       -DGGML_AVX512=${ENABLE_AVX512} \
       -DLLAMA_CURL=ON \
-  && cmake --build build -j"$(nproc)" \
-       --target llama-server \
-       --target llama-rpc-server
+      -DLLAMA_RPC=ON \
+  && cmake --build build -j"$(nproc)"
 
 
 # ── Stage 2: runtime ─────────────────────────────────────────────────────────
