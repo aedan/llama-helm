@@ -10,7 +10,7 @@ spec:
   parentRefs:
     - name: {{ required "gateway.name is required when gateway.enabled=true — set it to the name of your existing Gateway resource" .Values.gateway.name }}
       namespace: {{ .Values.gateway.namespace | default .Release.Namespace }}
-      sectionName: {{ .Values.gateway.listenerName }}
+      sectionName: {{ printf "%s-https" (include "llama-cpp.fullname" .) }}
   hostnames:
     - {{ required "gateway.hostname must be set" .Values.gateway.hostname | quote }}
   rules:

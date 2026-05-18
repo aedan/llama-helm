@@ -1,0 +1,146 @@
+{{- if .Values.gateway.enabled }}
+{{- $certSecretName := printf "%s-gw-tls-secret" (include "llama-cpp.fullname" .) }}
+{{- $listenerName   := printf "%s-https" (include "llama-cpp.fullname" .) }}
+---
+# cert-manager Certificate — requests a Let's Encrypt cert for the hostname.
+# The secret lands in envoy-gateway namespace where flex-gateway can read it.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ $certSecretName }}
+  namespace: envoy-gateway
+  labels:
+    {{- include "llama-cpp.labels" . | nindent 4 }}
+spec:
+  dnsNames:
+    - {{ .Values.gateway.hostname | quote }}
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: letsencrypt-prod
+  secretName: {{ $certSecretName }}
+  usages:
+    - digital signature
+    - key encipherment
+---
+# One-shot Job: idempotently patches flex-gateway to add the HTTPS listener.
+# Runs as a post-install/post-upgrade hook; safe to re-run.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "llama-cpp.fullname" . }}-gateway-patch
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "llama-cpp.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/hook-weight: "-5"
+spec:
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "llama-cpp.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: gateway-patch
+    spec:
+      restartPolicy: OnFailure
+      serviceAccountName: {{ include "llama-cpp.fullname" . }}-gateway-patcher
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65534
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: patcher
+          image: bitnami/kubectl:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              LISTENER="{{ $listenerName }}"
+              GW_NAME="{{ .Values.gateway.name }}"
+              GW_NS="{{ .Values.gateway.namespace }}"
+              CERT_SECRET="{{ $certSecretName }}"
+              HOSTNAME="{{ .Values.gateway.hostname }}"
+
+              # Check if listener already exists — idempotent.
+              if kubectl get gateway "$GW_NAME" -n "$GW_NS" \
+                   -o jsonpath="{.spec.listeners[*].name}" \
+                 | tr ' ' '\n' | grep -qx "$LISTENER"; then
+                echo "Listener $LISTENER already exists — nothing to do."
+                exit 0
+              fi
+
+              echo "Adding listener $LISTENER to gateway $GW_NAME..."
+              PATCH=$(cat <<EOF
+              [{"op":"add","path":"/spec/listeners/-","value":{
+                "name":"$LISTENER",
+                "hostname":"$HOSTNAME",
+                "port":443,
+                "protocol":"HTTPS",
+                "allowedRoutes":{"namespaces":{"from":"All"}},
+                "tls":{"mode":"Terminate","certificateRefs":[{"group":"","kind":"Secret","name":"$CERT_SECRET"}]}
+              }}]
+              EOF
+              )
+              kubectl patch gateway "$GW_NAME" -n "$GW_NS" --type=json -p "$PATCH"
+              echo "Listener $LISTENER added."
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir: {}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "llama-cpp.fullname" . }}-gateway-patcher
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "llama-cpp.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/hook-weight: "-10"
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "llama-cpp.fullname" . }}-gateway-patcher
+  labels:
+    {{- include "llama-cpp.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/hook-weight: "-10"
+rules:
+  - apiGroups: ["gateway.networking.k8s.io"]
+    resources: ["gateways"]
+    verbs: ["get", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "llama-cpp.fullname" . }}-gateway-patcher
+  labels:
+    {{- include "llama-cpp.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/hook-weight: "-10"
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "llama-cpp.fullname" . }}-gateway-patcher
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "llama-cpp.fullname" . }}-gateway-patcher
+    namespace: {{ .Release.Namespace }}
+{{- end }}
