@@ -50,6 +50,7 @@ FROM debian:bookworm-slim
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libcurl4 ca-certificates curl \
+    libgomp1 \
     dnsutils \
   && rm -rf /var/lib/apt/lists/*
 
