@@ -1,0 +1,67 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: {{ include "llama-cpp.fullname" . }}-rpc-worker
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "llama-cpp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rpc-worker
+spec:
+  selector:
+    matchLabels:
+      {{- include "llama-cpp.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: rpc-worker
+  template:
+    metadata:
+      labels:
+        {{- include "llama-cpp.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: rpc-worker
+    spec:
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      containers:
+        - name: rpc-server
+          image: {{ include "llama-cpp.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command:
+            - llama-rpc-server
+          args:
+            - --host
+            - "0.0.0.0"
+            - --port
+            - {{ .Values.rpcWorker.port | quote }}
+            {{- if gt (int .Values.rpcWorker.threads) 0 }}
+            - --threads
+            - {{ .Values.rpcWorker.threads | quote }}
+            {{- end }}
+
+          ports:
+            - name: rpc
+              containerPort: {{ .Values.rpcWorker.port }}
+              protocol: TCP
+
+          resources:
+            {{- toYaml .Values.rpcWorker.resources | nindent 12 }}
+
+          readinessProbe:
+            tcpSocket:
+              port: rpc
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 6
+
+          livenessProbe:
+            tcpSocket:
+              port: rpc
+            initialDelaySeconds: 15
+            periodSeconds: 30
+            failureThreshold: 3

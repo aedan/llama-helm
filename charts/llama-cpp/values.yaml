@@ -1,0 +1,120 @@
+# Default values for the llama-cpp Helm chart.
+# Targets x86_64 CPU-only nodes (no GPU).
+# Multi-node layer distribution uses the llama.cpp RPC backend:
+#   - rpcWorker   DaemonSet runs llama-rpc-server on every labelled node
+#   - coordinator Deployment runs llama-server; it discovers workers at startup
+#     and connects to them via --rpc, distributing transformer layers across nodes.
+
+nameOverride: ""
+fullnameOverride: ""
+
+# ── Image ──────────────────────────────────────────────────────────────────
+image:
+  repository: ghcr.io/aedan/llama-cpp
+  pullPolicy: IfNotPresent
+  # Overrides Chart.appVersion when set.
+  tag: ""
+
+# Image used by the coordinator init container to discover RPC pod IPs.
+kubectlImage:
+  repository: bitnami/kubectl
+  tag: "latest"
+  pullPolicy: IfNotPresent
+
+# ── Node targeting ─────────────────────────────────────────────────────────
+# All pods (workers and coordinator) are scheduled only on nodes carrying
+# this label.  Label a node with: kubectl label node <name> llama.cpp=enabled
+nodeSelector:
+  "llama.cpp": "enabled"
+
+tolerations: []
+
+affinity: {}
+
+# ── RPC Worker (DaemonSet) ─────────────────────────────────────────────────
+rpcWorker:
+  port: 50052
+
+  # CPU threads the RPC server uses for tensor ops on this node.
+  # 0 = let the OS scheduler decide (uses all available cores).
+  threads: 0
+
+  resources:
+    requests:
+      cpu: "8"
+      memory: "32Gi"
+    limits:
+      cpu: "32"
+      memory: "128Gi"
+
+# ── Coordinator (llama-server) ─────────────────────────────────────────────
+coordinator:
+  replicas: 1
+
+  resources:
+    requests:
+      cpu: "4"
+      memory: "4Gi"
+    limits:
+      cpu: "8"
+      memory: "16Gi"
+
+  service:
+    type: ClusterIP
+    port: 80
+
+# ── Model storage ──────────────────────────────────────────────────────────
+model:
+  # Absolute path inside the container where the GGUF file lives.
+  path: "/models/model.gguf"
+
+  pvc:
+    # Total storage for model weights.  A 70B Q4_K_M model needs ~42 GiB.
+    size: "100Gi"
+    # Leave empty to use the cluster default StorageClass.
+    storageClass: ""
+    accessMode: ReadWriteOnce
+
+# ── llama-server parameters ────────────────────────────────────────────────
+server:
+  host: "0.0.0.0"
+  port: "8080"
+
+  # Context window in tokens.
+  ctxSize: "4096"
+
+  # Number of parallel request slots (one KV-cache copy each).
+  parallelSlots: "4"
+
+  # Prompt evaluation batch size.
+  batchSize: "512"
+
+  # CPU threads for the coordinator's own prompt/generation work.
+  # The heavy tensor compute happens on the RPC workers.
+  threads: "4"
+
+  # KV-cache quantization.  q8_0 cuts memory ~2x vs f16 with negligible loss.
+  kvCacheType: "q8_0"
+
+  # Enable flash attention (reduces memory bandwidth pressure on CPU).
+  flashAttn: true
+
+  # Arbitrary extra args appended to the llama-server command.
+  # Example: ["--log-verbosity", "1", "--metrics"]
+  extraArgs: []
+
+# ── Secrets ────────────────────────────────────────────────────────────────
+# The chart can create a Secret from these values for convenience in dev/test.
+# In production, set secrets.create=false and create the Secret externally:
+#
+#   kubectl create secret generic <release>-llama-cpp \
+#     --from-literal=MODEL_URL='https://...' \
+#     --from-literal=HF_TOKEN='hf_...'
+#
+secrets:
+  # Set to true to have the chart create the Secret from the values below.
+  # WARNING: values baked into Helm releases are stored in cluster Secrets —
+  # use an external secret manager for anything sensitive in production.
+  create: false
+  modelUrl: ""
+  hfToken: ""

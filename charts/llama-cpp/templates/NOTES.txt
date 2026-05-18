@@ -1,0 +1,49 @@
+llama-cpp has been deployed.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  1. Label nodes to receive llama.cpp pods
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  kubectl label node <node-name> llama.cpp=enabled
+
+  The RPC DaemonSet will schedule a worker on every labelled node.
+  The coordinator pod will also land on a labelled node.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  2. Provide the model download secret (if not already done)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  kubectl create secret generic {{ include "llama-cpp.secretName" . }} \
+    --namespace {{ .Release.Namespace }} \
+    --from-literal=MODEL_URL='https://huggingface.co/...' \
+    --from-literal=HF_TOKEN=''
+
+  Skip HF_TOKEN for public models.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  3. Access the OpenAI-compatible API
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  # Port-forward for a quick test:
+  kubectl port-forward -n {{ .Release.Namespace }} \
+    svc/{{ include "llama-cpp.fullname" . }}-coordinator 8080:80
+
+  curl http://localhost:8080/v1/chat/completions \
+    -H 'Content-Type: application/json' \
+    -d '{"model":"local","messages":[{"role":"user","content":"Hello"}]}'
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  Architecture: multi-node RPC tensor split
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  ┌─────────────────────────────────────────────────────────┐
+  │  coordinator pod (llama-server)                         │
+  │  - loads model metadata, schedules tensor operations    │
+  │  - connects to all rpc-worker pods at startup           │
+  └──────────┬──────────────────────────────────────────────┘
+             │  --rpc worker1:50052,worker2:50052,...
+  ┌──────────▼──────────┐   ┌────────────────────────┐
+  │  rpc-worker (node1) │   │  rpc-worker (node2)    │  ...
+  │  llama-rpc-server   │   │  llama-rpc-server      │
+  │  transformer layers │   │  transformer layers    │
+  └─────────────────────┘   └────────────────────────┘

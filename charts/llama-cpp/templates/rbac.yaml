@@ -1,0 +1,31 @@
+---
+# The coordinator init container needs to list RPC worker pod IPs so it can
+# build the --rpc and --tensor-split arguments dynamically.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: {{ include "llama-cpp.fullname" . }}-coordinator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "llama-cpp.labels" . | nindent 4 }}
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: {{ include "llama-cpp.fullname" . }}-coordinator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "llama-cpp.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: {{ include "llama-cpp.fullname" . }}-coordinator
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "llama-cpp.serviceAccountName" . }}
+    namespace: {{ .Release.Namespace }}

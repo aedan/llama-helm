@@ -1,0 +1,201 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "llama-cpp.fullname" . }}-coordinator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "llama-cpp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: coordinator
+spec:
+  replicas: {{ .Values.coordinator.replicas }}
+  selector:
+    matchLabels:
+      {{- include "llama-cpp.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: coordinator
+  template:
+    metadata:
+      labels:
+        {{- include "llama-cpp.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: coordinator
+    spec:
+      serviceAccountName: {{ include "llama-cpp.serviceAccountName" . }}
+
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      initContainers:
+        # ── Step 1: download model (skipped if GGUF already present) ──────────
+        - name: model-downloader
+          image: curlimages/curl:8.7.1
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              if [ -f "$MODEL_PATH" ]; then
+                echo "Model already present at $MODEL_PATH, skipping download."
+                exit 0
+              fi
+              echo "Downloading model..."
+              mkdir -p "$(dirname "$MODEL_PATH")"
+              curl -fSL --retry 5 --retry-delay 15 \
+                   -H "Authorization: Bearer ${HF_TOKEN}" \
+                   -o "$MODEL_PATH" \
+                   "$MODEL_URL"
+              echo "Download complete."
+          env:
+            - name: MODEL_PATH
+              value: {{ .Values.model.path | quote }}
+            - name: MODEL_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "llama-cpp.secretName" . }}
+                  key: MODEL_URL
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "llama-cpp.secretName" . }}
+                  key: HF_TOKEN
+                  optional: true
+          volumeMounts:
+            - name: model-store
+              mountPath: /models
+
+        # ── Step 2: discover RPC worker pod IPs ───────────────────────────────
+        # Uses the chart ServiceAccount (bound to a Role that can list pods)
+        # to get the live pod IPs of all rpc-worker DaemonSet pods.
+        # Writes two files to a shared emptyDir volume:
+        #   /tmp/rpc/endpoints    — comma-separated host:port list for --rpc
+        #   /tmp/rpc/tensor-split — comma-separated "1" values for --tensor-split
+        - name: rpc-discover
+          image: {{ .Values.kubectlImage.repository }}:{{ .Values.kubectlImage.tag }}
+          imagePullPolicy: {{ .Values.kubectlImage.pullPolicy }}
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "Discovering RPC workers..."
+
+              POD_IPS=$(kubectl get pods \
+                --namespace "$NAMESPACE" \
+                --selector "$SELECTOR" \
+                --field-selector status.phase=Running \
+                -o jsonpath='{range .items[*]}{.status.podIP}{"\n"}{end}' \
+                | grep -v '^$')
+
+              if [ -z "$POD_IPS" ]; then
+                echo "ERROR: no running rpc-worker pods found." >&2
+                echo "Label at least one node with: kubectl label node <name> llama.cpp=enabled" >&2
+                exit 1
+              fi
+
+              WORKER_COUNT=$(echo "$POD_IPS" | wc -l | tr -d ' ')
+              echo "Found $WORKER_COUNT workers."
+
+              # Build --rpc argument: host1:port,host2:port,...
+              RPC_LIST=$(echo "$POD_IPS" | awk -v port="$RPC_PORT" \
+                '{printf "%s%s:%s", (NR>1?",":""), $1, port}')
+
+              # Build --tensor-split argument: 1,1,... (equal shards per worker)
+              TENSOR_SPLIT=$(awk -v n="$WORKER_COUNT" \
+                'BEGIN{for(i=1;i<=n;i++) printf "%s1",(i>1?",":"")}')
+
+              mkdir -p /tmp/rpc
+              printf '%s' "$RPC_LIST"    > /tmp/rpc/endpoints
+              printf '%s' "$TENSOR_SPLIT" > /tmp/rpc/tensor-split
+
+              echo "RPC endpoints:  $RPC_LIST"
+              echo "Tensor split:   $TENSOR_SPLIT"
+          env:
+            - name: NAMESPACE
+              value: {{ .Release.Namespace | quote }}
+            - name: SELECTOR
+              value: "app.kubernetes.io/name={{ include "llama-cpp.name" . }},app.kubernetes.io/instance={{ .Release.Name }},app.kubernetes.io/component=rpc-worker"
+            - name: RPC_PORT
+              value: {{ .Values.rpcWorker.port | quote }}
+          volumeMounts:
+            - name: rpc-data
+              mountPath: /tmp/rpc
+
+      # ── Main container ───────────────────────────────────────────────────────
+      containers:
+        - name: llama-server
+          image: {{ include "llama-cpp.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.server.port }}
+              protocol: TCP
+
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              RPC=$(cat /tmp/rpc/endpoints)
+              TSPLIT=$(cat /tmp/rpc/tensor-split)
+              echo "Starting llama-server"
+              echo "  --rpc           $RPC"
+              echo "  --tensor-split  $TSPLIT"
+              exec llama-server \
+                --host        "{{ .Values.server.host }}" \
+                --port        "{{ .Values.server.port }}" \
+                --model       "{{ .Values.model.path }}" \
+                --rpc         "$RPC" \
+                --tensor-split "$TSPLIT" \
+                --ctx-size    "{{ .Values.server.ctxSize }}" \
+                --parallel    "{{ .Values.server.parallelSlots }}" \
+                --batch-size  "{{ .Values.server.batchSize }}" \
+                --threads     "{{ .Values.server.threads }}" \
+                --cache-type-k "{{ .Values.server.kvCacheType }}" \
+                {{- if .Values.server.flashAttn }}
+                --flash-attn \
+                {{- end }}
+                --no-mmap \
+                {{- range .Values.server.extraArgs }}
+                {{ . }} \
+                {{- end }}
+                --log-prefix
+
+          resources:
+            {{- toYaml .Values.coordinator.resources | nindent 12 }}
+
+          volumeMounts:
+            - name: model-store
+              mountPath: /models
+            - name: rpc-data
+              mountPath: /tmp/rpc
+
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 20
+            timeoutSeconds: 5
+
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: http
+            initialDelaySeconds: 120
+            periodSeconds: 30
+            failureThreshold: 5
+            timeoutSeconds: 5
+
+      volumes:
+        - name: model-store
+          persistentVolumeClaim:
+            claimName: {{ include "llama-cpp.fullname" . }}-models
+        - name: rpc-data
+          emptyDir: {}

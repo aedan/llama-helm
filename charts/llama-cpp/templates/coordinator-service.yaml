@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "llama-cpp.fullname" . }}-coordinator
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "llama-cpp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: coordinator
+spec:
+  type: {{ .Values.coordinator.service.type }}
+  selector:
+    {{- include "llama-cpp.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: coordinator
+  ports:
+    - name: http
+      port: {{ .Values.coordinator.service.port }}
+      targetPort: http
+      protocol: TCP

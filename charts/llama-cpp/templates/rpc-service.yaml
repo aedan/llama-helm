@@ -1,0 +1,20 @@
+# Headless Service — each RPC worker pod gets its own DNS A record.
+# The coordinator init container resolves this to the individual pod IPs.
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "llama-cpp.fullname" . }}-rpc-worker
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "llama-cpp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: rpc-worker
+spec:
+  clusterIP: None
+  selector:
+    {{- include "llama-cpp.selectorLabels" . | nindent 4 }}
+    app.kubernetes.io/component: rpc-worker
+  ports:
+    - name: rpc
+      port: {{ .Values.rpcWorker.port }}
+      targetPort: rpc
+      protocol: TCP
