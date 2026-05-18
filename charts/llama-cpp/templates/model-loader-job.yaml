@@ -1,0 +1,97 @@
+{{- if .Values.models.library }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "llama-cpp.fullname" . }}-model-loader
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "llama-cpp.labels" . | nindent 4 }}
+    app.kubernetes.io/component: model-loader
+  annotations:
+    # Runs before the coordinator pod starts on every install and upgrade.
+    # The previous Job is deleted first so a re-run always reflects the
+    # current models.library contents.
+    helm.sh/hook: post-install,post-upgrade
+    helm.sh/hook-delete-policy: before-hook-creation
+    helm.sh/hook-weight: "0"
+spec:
+  # Generous deadline: large models take a long time on a slow link.
+  activeDeadlineSeconds: 86400
+  backoffLimit: 3
+  template:
+    metadata:
+      labels:
+        {{- include "llama-cpp.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: model-loader
+    spec:
+      restartPolicy: OnFailure
+
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+
+      containers:
+        - name: downloader
+          image: curlimages/curl:8.7.1
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              ERRORS=0
+
+              {{- range .Values.models.library }}
+              DEST="/models/{{ .filename }}"
+              if [ -f "$DEST" ]; then
+                echo "[SKIP] {{ .name }} already present at $DEST"
+              else
+                echo "[DOWN] {{ .name }} -> $DEST"
+                mkdir -p /models
+                if curl -fSL --retry 5 --retry-delay 15 \
+                     -H "Authorization: Bearer ${HF_TOKEN}" \
+                     -o "${DEST}.tmp" \
+                     "{{ .url }}"; then
+                  mv "${DEST}.tmp" "$DEST"
+                  echo "[OK]   {{ .name }}"
+                else
+                  echo "[FAIL] {{ .name }}" >&2
+                  rm -f "${DEST}.tmp"
+                  ERRORS=$((ERRORS + 1))
+                fi
+              fi
+              {{- end }}
+
+              if [ "$ERRORS" -gt 0 ]; then
+                echo "$ERRORS model(s) failed to download." >&2
+                exit 1
+              fi
+              echo "All models ready."
+
+          env:
+            - name: HF_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "llama-cpp.secretName" . }}
+                  key: HF_TOKEN
+                  optional: true
+
+          resources:
+            requests:
+              cpu: "1"
+              memory: "256Mi"
+            limits:
+              cpu: "2"
+              memory: "512Mi"
+
+          volumeMounts:
+            - name: model-store
+              mountPath: /models
+
+      volumes:
+        - name: model-store
+          persistentVolumeClaim:
+            claimName: {{ include "llama-cpp.fullname" . }}-models
+{{- end }}

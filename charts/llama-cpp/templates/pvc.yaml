@@ -5,12 +5,15 @@ metadata:
   namespace: {{ .Release.Namespace }}
   labels:
     {{- include "llama-cpp.labels" . | nindent 4 }}
+  annotations:
+    # Prevent helm uninstall from deleting downloaded models.
+    helm.sh/resource-policy: keep
 spec:
   accessModes:
-    - {{ .Values.model.pvc.accessMode }}
+    - {{ .Values.models.pvc.accessMode }}
   resources:
     requests:
-      storage: {{ .Values.model.pvc.size }}
-  {{- if .Values.model.pvc.storageClass }}
-  storageClassName: {{ .Values.model.pvc.storageClass }}
+      storage: {{ .Values.models.pvc.size }}
+  {{- if .Values.models.pvc.storageClass }}
+  storageClassName: {{ .Values.models.pvc.storageClass }}
   {{- end }}

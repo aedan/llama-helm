@@ -7,30 +7,58 @@ llama-cpp has been deployed.
   kubectl label node <node-name> llama.cpp=enabled
 
   The RPC DaemonSet will schedule a worker on every labelled node.
-  The coordinator pod will also land on a labelled node.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  2. Provide the model download secret (if not already done)
+  2. Model management
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  kubectl create secret generic {{ include "llama-cpp.secretName" . }} \
-    --namespace {{ .Release.Namespace }} \
-    --from-literal=MODEL_URL='https://huggingface.co/...' \
-    --from-literal=HF_TOKEN=''
+  Add models to the library in values.yaml, then helm upgrade:
 
-  Skip HF_TOKEN for public models.
+    models:
+      active: "my-model.gguf"          # which file to serve
+      library:
+        - name: my-model
+          filename: my-model.gguf
+          url: "https://huggingface.co/..."
+
+  The model-loader Job downloads any new entries to the PVC.
+  Files already present are skipped (idempotent).
+
+  For gated / private HuggingFace models, create the token secret first:
+
+    kubectl create secret generic {{ include "llama-cpp.secretName" . }} \
+      --namespace {{ .Release.Namespace }} \
+      --from-literal=HF_TOKEN='hf_...'
+
+  Switch the active model without re-downloading:
+
+    helm upgrade {{ .Release.Name }} <chart> --set models.active=other-model.gguf
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-  3. Access the OpenAI-compatible API
+  3. Gateway / access
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-  # Port-forward for a quick test:
-  kubectl port-forward -n {{ .Release.Namespace }} \
-    svc/{{ include "llama-cpp.fullname" . }}-coordinator 8080:80
+{{- if .Values.gateway.enabled }}
+  HTTPRoute created for: https://{{ .Values.gateway.hostname }}
 
-  curl http://localhost:8080/v1/chat/completions \
+  curl https://{{ .Values.gateway.hostname }}/v1/chat/completions \
     -H 'Content-Type: application/json' \
     -d '{"model":"local","messages":[{"role":"user","content":"Hello"}]}'
+{{- else }}
+  Gateway is disabled.  Port-forward for a quick test:
+
+    kubectl port-forward -n {{ .Release.Namespace }} \
+      svc/{{ include "llama-cpp.fullname" . }}-coordinator 8080:80
+
+    curl http://localhost:8080/v1/chat/completions \
+      -H 'Content-Type: application/json' \
+      -d '{"model":"local","messages":[{"role":"user","content":"Hello"}]}'
+
+  Enable the Gateway route:
+    --set gateway.enabled=true \
+    --set gateway.name=<your-gateway-name> \
+    --set gateway.hostname=llama.api.ord.cloudmunchers.net
+{{- end }}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
   Architecture: multi-node RPC tensor split
@@ -38,12 +66,13 @@ llama-cpp has been deployed.
 
   ┌─────────────────────────────────────────────────────────┐
   │  coordinator pod (llama-server)                         │
-  │  - loads model metadata, schedules tensor operations    │
+  │  - waits for active model on PVC, then starts server    │
   │  - connects to all rpc-worker pods at startup           │
   └──────────┬──────────────────────────────────────────────┘
              │  --rpc worker1:50052,worker2:50052,...
   ┌──────────▼──────────┐   ┌────────────────────────┐
   │  rpc-worker (node1) │   │  rpc-worker (node2)    │  ...
   │  llama-rpc-server   │   │  llama-rpc-server      │
-  │  transformer layers │   │  transformer layers    │
   └─────────────────────┘   └────────────────────────┘
+             ↑
+  model-loader Job writes GGUF files to shared PVC

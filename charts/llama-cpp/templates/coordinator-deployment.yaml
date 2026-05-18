@@ -32,49 +32,31 @@ spec:
       {{- end }}
 
       initContainers:
-        # ── Step 1: download model (skipped if GGUF already present) ──────────
-        - name: model-downloader
-          image: curlimages/curl:8.7.1
+        # ── Step 1: wait for the active model file ────────────────────────────
+        # The model-loader Job (post-install/post-upgrade hook) downloads models
+        # to the PVC asynchronously.  This init container polls until the active
+        # model file is present so llama-server never starts against a missing file.
+        - name: model-wait
+          image: busybox:1.36
           command:
             - /bin/sh
             - -c
             - |
-              set -e
-              if [ -f "$MODEL_PATH" ]; then
-                echo "Model already present at $MODEL_PATH, skipping download."
-                exit 0
-              fi
-              echo "Downloading model..."
-              mkdir -p "$(dirname "$MODEL_PATH")"
-              curl -fSL --retry 5 --retry-delay 15 \
-                   -H "Authorization: Bearer ${HF_TOKEN}" \
-                   -o "$MODEL_PATH" \
-                   "$MODEL_URL"
-              echo "Download complete."
-          env:
-            - name: MODEL_PATH
-              value: {{ .Values.model.path | quote }}
-            - name: MODEL_URL
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "llama-cpp.secretName" . }}
-                  key: MODEL_URL
-            - name: HF_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "llama-cpp.secretName" . }}
-                  key: HF_TOKEN
-                  optional: true
+              MODEL="/models/{{ required "models.active must be set to a GGUF filename" .Values.models.active }}"
+              echo "Waiting for model: $MODEL"
+              until [ -f "$MODEL" ]; do
+                echo "  not ready, retrying in 30s..."
+                sleep 30
+              done
+              echo "Model ready."
           volumeMounts:
             - name: model-store
               mountPath: /models
 
         # ── Step 2: discover RPC worker pod IPs ───────────────────────────────
-        # Uses the chart ServiceAccount (bound to a Role that can list pods)
-        # to get the live pod IPs of all rpc-worker DaemonSet pods.
-        # Writes two files to a shared emptyDir volume:
+        # Queries the Kubernetes API for live rpc-worker pod IPs and writes:
         #   /tmp/rpc/endpoints    — comma-separated host:port list for --rpc
-        #   /tmp/rpc/tensor-split — comma-separated "1" values for --tensor-split
+        #   /tmp/rpc/tensor-split — equal-weight "1,1,..." for --tensor-split
         - name: rpc-discover
           image: {{ .Values.kubectlImage.repository }}:{{ .Values.kubectlImage.tag }}
           imagePullPolicy: {{ .Values.kubectlImage.pullPolicy }}
@@ -94,23 +76,21 @@ spec:
 
               if [ -z "$POD_IPS" ]; then
                 echo "ERROR: no running rpc-worker pods found." >&2
-                echo "Label at least one node with: kubectl label node <name> llama.cpp=enabled" >&2
+                echo "Label at least one node: kubectl label node <name> llama.cpp=enabled" >&2
                 exit 1
               fi
 
               WORKER_COUNT=$(echo "$POD_IPS" | wc -l | tr -d ' ')
               echo "Found $WORKER_COUNT workers."
 
-              # Build --rpc argument: host1:port,host2:port,...
               RPC_LIST=$(echo "$POD_IPS" | awk -v port="$RPC_PORT" \
                 '{printf "%s%s:%s", (NR>1?",":""), $1, port}')
 
-              # Build --tensor-split argument: 1,1,... (equal shards per worker)
               TENSOR_SPLIT=$(awk -v n="$WORKER_COUNT" \
                 'BEGIN{for(i=1;i<=n;i++) printf "%s1",(i>1?",":"")}')
 
               mkdir -p /tmp/rpc
-              printf '%s' "$RPC_LIST"    > /tmp/rpc/endpoints
+              printf '%s' "$RPC_LIST"     > /tmp/rpc/endpoints
               printf '%s' "$TENSOR_SPLIT" > /tmp/rpc/tensor-split
 
               echo "RPC endpoints:  $RPC_LIST"
@@ -144,12 +124,13 @@ spec:
               RPC=$(cat /tmp/rpc/endpoints)
               TSPLIT=$(cat /tmp/rpc/tensor-split)
               echo "Starting llama-server"
+              echo "  model:          /models/{{ .Values.models.active }}"
               echo "  --rpc           $RPC"
               echo "  --tensor-split  $TSPLIT"
               exec llama-server \
                 --host        "{{ .Values.server.host }}" \
                 --port        "{{ .Values.server.port }}" \
-                --model       "{{ .Values.model.path }}" \
+                --model       "/models/{{ .Values.models.active }}" \
                 --rpc         "$RPC" \
                 --tensor-split "$TSPLIT" \
                 --ctx-size    "{{ .Values.server.ctxSize }}" \
