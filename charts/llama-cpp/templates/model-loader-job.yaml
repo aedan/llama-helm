@@ -1,4 +1,5 @@
-{{- if .Values.models.library }}
+{{- $allModels := concat .Values.models.library (default (list) .Values.models.extra) }}
+{{- if $allModels }}
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -8,14 +9,12 @@ metadata:
     {{- include "llama-cpp.labels" . | nindent 4 }}
     app.kubernetes.io/component: model-loader
   annotations:
-    # Runs before the coordinator pod starts on every install and upgrade.
-    # The previous Job is deleted first so a re-run always reflects the
-    # current models.library contents.
+    # Runs after every install/upgrade; previous Job is cleaned up first.
     helm.sh/hook: post-install,post-upgrade
     helm.sh/hook-delete-policy: before-hook-creation
     helm.sh/hook-weight: "0"
 spec:
-  # Generous deadline: large models take a long time on a slow link.
+  # 24-hour deadline to accommodate large models on slow links.
   activeDeadlineSeconds: 86400
   backoffLimit: 3
   template:
@@ -43,10 +42,10 @@ spec:
               set -e
               ERRORS=0
 
-              {{- range .Values.models.library }}
+              {{- range $allModels }}
               DEST="/models/{{ .filename }}"
               if [ -f "$DEST" ]; then
-                echo "[SKIP] {{ .name }} already present at $DEST"
+                echo "[SKIP] {{ .name }} already present"
               else
                 echo "[DOWN] {{ .name }} -> $DEST"
                 mkdir -p /models

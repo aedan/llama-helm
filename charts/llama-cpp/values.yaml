@@ -68,27 +68,49 @@ coordinator:
 # Files already present on the PVC are never re-downloaded (idempotent).
 # The coordinator waits for models.active to appear before starting.
 #
-# To add a model:    helm upgrade <release> . --set 'models.library[N].name=...'
-# To switch models:  helm upgrade <release> . --set models.active=new-model.gguf
+# Two lists are concatenated at deploy time:
+#   models.library — chart-default models (Qwen3.6-27B shipped here)
+#   models.extra   — your additions; override this without touching .library
+#
+# Switch the active model (no re-download needed):
+#   helm upgrade <release> . --set models.active=other-model.gguf
+#
+# Add extra models via CLI (comma-sep Helm set-json or a values file):
+#   helm upgrade <release> . -f my-extra-models.yaml
+#   # my-extra-models.yaml:
+#   # models:
+#   #   extra:
+#   #     - name: mistral-7b-q4
+#   #       filename: mistral-7b-q4.gguf
+#   #       url: "https://huggingface.co/..."
 models:
   # Filename (under /models/) that llama-server loads.
-  # Must match the filename of one entry in .library (or be pre-existing on the PVC).
-  active: ""
+  # Must be the filename of an entry in .library or .extra, or already on the PVC.
+  active: "Qwen_Qwen3.6-27B-Q4_K_M.gguf"
 
-  # Library of models to download.  Each entry is downloaded once by the
-  # model-loader Job; re-running helm upgrade with the same entry is a no-op.
-  library: []
+  # Default model library — shipped with the chart.
+  # Qwen3.6-27B Q4_K_M: ~17.5 GB, good balance of quality and RAM usage on
+  # multi-node HPE DL380 Gen9 (layers distributed across nodes via RPC).
+  library:
+    - name: qwen3.6-27b-q4
+      filename: "Qwen_Qwen3.6-27B-Q4_K_M.gguf"
+      url: "https://huggingface.co/bartowski/Qwen_Qwen3.6-27B-GGUF/resolve/main/Qwen_Qwen3.6-27B-Q4_K_M.gguf"
+
+  # Additional models to download alongside the defaults.
+  # Override this in your values file without replacing .library.
   # Example:
-  # library:
-  #   - name: llama-3-8b-q4                 # human label (for your reference)
-  #     filename: llama-3-8b-q4.gguf        # saved as /models/<filename>
-  #     url: "https://huggingface.co/bartowski/Meta-Llama-3-8B-Instruct-GGUF/resolve/main/Meta-Llama-3-8B-Instruct-Q4_K_M.gguf"
+  # extra:
+  #   - name: qwen3.6-35b-moe-q4
+  #     filename: "Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"
+  #     url: "https://huggingface.co/unsloth/Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen3.6-35B-A3B-UD-Q4_K_M.gguf"
   #   - name: mistral-7b-q4
-  #     filename: mistral-7b-q4.gguf
+  #     filename: "mistral-7b-q4.gguf"
   #     url: "https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q4_K_M.gguf"
+  extra: []
 
   pvc:
-    # Size to accommodate your full model library.  A 70B Q4_K_M is ~42 GiB.
+    # Default sized for the Qwen3.6-27B default plus room for extras.
+    # Increase if you add large models to .extra.
     size: "200Gi"
     storageClass: ""
     accessMode: ReadWriteOnce
