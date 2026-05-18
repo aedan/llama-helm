@@ -43,9 +43,6 @@ spec:
 
       initContainers:
         # ── Step 1: wait for the active model file ────────────────────────────
-        # The model-loader Job (post-install/post-upgrade hook) downloads models
-        # to the PVC asynchronously.  This init container polls until the active
-        # model file is present so llama-server never starts against a missing file.
         - name: model-wait
           image: busybox:1.36
           securityContext:
@@ -67,6 +64,7 @@ spec:
             - name: model-store
               mountPath: /models
 
+        {{- if not .Values.singleNode }}
         # ── Step 2: discover RPC worker pod IPs ───────────────────────────────
         # Queries the Kubernetes API for live rpc-worker pod IPs and writes:
         #   /tmp/rpc/endpoints    — comma-separated host:port list for --rpc
@@ -123,6 +121,7 @@ spec:
           volumeMounts:
             - name: rpc-data
               mountPath: /tmp/rpc
+        {{- end }}
 
       # ── Main container ───────────────────────────────────────────────────────
       containers:
@@ -143,9 +142,28 @@ spec:
             - -c
             - |
               set -e
+              {{- if .Values.singleNode }}
+              echo "Starting llama-server (single-node)"
+              echo "  model: /models/{{ .Values.models.active }}"
+              exec llama-server \
+                --host        "{{ .Values.server.host }}" \
+                --port        "{{ .Values.server.port }}" \
+                --model       "/models/{{ .Values.models.active }}" \
+                --ctx-size    "{{ .Values.server.ctxSize }}" \
+                --parallel    "{{ .Values.server.parallelSlots }}" \
+                --batch-size  "{{ .Values.server.batchSize }}" \
+                --threads     "{{ .Values.server.threads }}" \
+                --cache-type-k "{{ .Values.server.kvCacheType }}" \
+                --flash-attn {{ if .Values.server.flashAttn }}on{{ else }}off{{ end }} \
+                --no-mmap \
+                {{- range .Values.server.extraArgs }}
+                {{ . }} \
+                {{- end }}
+                --log-prefix
+              {{- else }}
               RPC=$(cat /tmp/rpc/endpoints)
               TSPLIT=$(cat /tmp/rpc/tensor-split)
-              echo "Starting llama-server"
+              echo "Starting llama-server (multi-node RPC)"
               echo "  model:          /models/{{ .Values.models.active }}"
               echo "  --rpc           $RPC"
               echo "  --tensor-split  $TSPLIT"
@@ -166,6 +184,7 @@ spec:
                 {{ . }} \
                 {{- end }}
                 --log-prefix
+              {{- end }}
 
           resources:
             {{- toYaml .Values.coordinator.resources | nindent 12 }}
@@ -173,8 +192,10 @@ spec:
           volumeMounts:
             - name: model-store
               mountPath: /models
+            {{- if not .Values.singleNode }}
             - name: rpc-data
               mountPath: /tmp/rpc
+            {{- end }}
             - name: tmp
               mountPath: /tmp
 
@@ -200,7 +221,9 @@ spec:
         - name: model-store
           persistentVolumeClaim:
             claimName: {{ include "llama-cpp.fullname" . }}-models
+        {{- if not .Values.singleNode }}
         - name: rpc-data
           emptyDir: {}
+        {{- end }}
         - name: tmp
           emptyDir: {}

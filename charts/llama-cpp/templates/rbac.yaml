@@ -1,3 +1,4 @@
+{{- if not .Values.singleNode }}
 ---
 # The coordinator init container needs to list RPC worker pod IPs so it can
 # build the --rpc and --tensor-split arguments dynamically.
@@ -29,3 +30,4 @@ subjects:
   - kind: ServiceAccount
     name: {{ include "llama-cpp.serviceAccountName" . }}
     namespace: {{ .Release.Namespace }}
+{{- end }}

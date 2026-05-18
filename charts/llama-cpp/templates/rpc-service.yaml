@@ -1,3 +1,4 @@
+{{- if not .Values.singleNode }}
 # Headless Service — each RPC worker pod gets its own DNS A record.
 # The coordinator init container resolves this to the individual pod IPs.
 apiVersion: v1
@@ -18,3 +19,4 @@ spec:
       port: {{ .Values.rpcWorker.port }}
       targetPort: rpc
       protocol: TCP
+{{- end }}

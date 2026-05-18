@@ -8,6 +8,16 @@
 nameOverride: ""
 fullnameOverride: ""
 
+# ── Deployment mode ────────────────────────────────────────────────────────
+# singleNode: true  — llama-server runs entirely on one node; no RPC workers.
+#   Faster for models that fit in one node's RAM (the coordinator holds all
+#   layers locally, eliminating RPC round-trips per token).
+#   Recommended: bump server.threads to use all cores, e.g. --set server.threads=32
+#
+# singleNode: false — default multi-node RPC mode; layers split across all
+#   nodes labelled llama.cpp=enabled via the rpc-server DaemonSet.
+singleNode: false
+
 # ── Image ──────────────────────────────────────────────────────────────────
 image:
   repository: ghcr.io/aedan/llama-cpp

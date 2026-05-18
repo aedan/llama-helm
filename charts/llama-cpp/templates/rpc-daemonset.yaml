@@ -1,3 +1,4 @@
+{{- if not .Values.singleNode }}
 apiVersion: apps/v1
 kind: DaemonSet
 metadata:
@@ -76,3 +77,4 @@ spec:
       volumes:
         - name: tmp
           emptyDir: {}
+{{- end }}
