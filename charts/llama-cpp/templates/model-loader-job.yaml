@@ -30,6 +30,9 @@ spec:
       securityContext:
         runAsNonRoot: true
         runAsUser: 100
+        # fsGroup causes kubelet to chown the volume to this GID and add g+w,
+        # allowing the curl user (uid=100) to write to the root-owned PVC mount.
+        fsGroup: 100
         seccompProfile:
           type: RuntimeDefault
 

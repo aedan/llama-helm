@@ -6,7 +6,7 @@ description: >
   discrete GPU.  All llama.cpp nodes are selected by the label llama.cpp=enabled.
 
 type: application
-version: 0.5.0
+version: 0.6.0
 appVersion: "latest"
 
 keywords:
