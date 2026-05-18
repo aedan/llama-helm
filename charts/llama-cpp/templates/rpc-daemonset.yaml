@@ -43,7 +43,7 @@ spec:
             capabilities:
               drop: ["ALL"]
           command:
-            - llama-rpc-server
+            - rpc-server
           args:
             - --host
             - "0.0.0.0"

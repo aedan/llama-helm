@@ -39,9 +39,9 @@ RUN cmake -B build \
 # llama-rpc-server may land in build/bin/ or build/tools/rpc/ depending on version.
 RUN set -e; \
     echo "=== built executables ===" && find /llama.cpp/build -type f -executable | sort; \
-    cp "$(find /llama.cpp/build -type f -name 'llama-server'     | head -1)" /usr/local/bin/llama-server; \
-    cp "$(find /llama.cpp/build -type f -name 'llama-rpc-server' | head -1)" /usr/local/bin/llama-rpc-server; \
-    echo "staged: $(ls -lh /usr/local/bin/llama-server /usr/local/bin/llama-rpc-server)"
+    cp "$(find /llama.cpp/build -type f -name 'llama-server' | head -1)" /usr/local/bin/llama-server; \
+    cp "$(find /llama.cpp/build -type f -name 'rpc-server'   | head -1)" /usr/local/bin/rpc-server; \
+    echo "staged: $(ls -lh /usr/local/bin/llama-server /usr/local/bin/rpc-server)"
 
 
 # ── Stage 2: runtime ─────────────────────────────────────────────────────────
@@ -52,10 +52,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dnsutils \
   && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /usr/local/bin/llama-server     /usr/local/bin/llama-server
-COPY --from=builder /usr/local/bin/llama-rpc-server /usr/local/bin/llama-rpc-server
+COPY --from=builder /usr/local/bin/llama-server /usr/local/bin/llama-server
+COPY --from=builder /usr/local/bin/rpc-server   /usr/local/bin/rpc-server
 
-RUN chmod +x /usr/local/bin/llama-server /usr/local/bin/llama-rpc-server \
+RUN chmod +x /usr/local/bin/llama-server /usr/local/bin/rpc-server \
  && useradd -u 1000 -m -s /bin/bash llama
 
 USER 1000
