@@ -156,9 +156,7 @@ spec:
                 --batch-size  "{{ .Values.server.batchSize }}" \
                 --threads     "{{ .Values.server.threads }}" \
                 --cache-type-k "{{ .Values.server.kvCacheType }}" \
-                {{- if .Values.server.flashAttn }}
-                --flash-attn \
-                {{- end }}
+                --flash-attn {{ if .Values.server.flashAttn }}on{{ else }}off{{ end }} \
                 --no-mmap \
                 {{- range .Values.server.extraArgs }}
                 {{ . }} \
