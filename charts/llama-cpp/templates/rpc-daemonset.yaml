@@ -69,13 +69,6 @@ spec:
             periodSeconds: 10
             failureThreshold: 6
 
-          livenessProbe:
-            tcpSocket:
-              port: rpc
-            initialDelaySeconds: 15
-            periodSeconds: 30
-            failureThreshold: 3
-
           volumeMounts:
             - name: tmp
               mountPath: /tmp
