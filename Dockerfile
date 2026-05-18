@@ -32,7 +32,16 @@ RUN cmake -B build \
       -DGGML_AVX512=${ENABLE_AVX512} \
       -DLLAMA_CURL=ON \
       -DLLAMA_RPC=ON \
+      -DGGML_RPC=ON \
   && cmake --build build -j"$(nproc)"
+
+# Stage the two binaries at a fixed path regardless of where cmake placed them.
+# llama-rpc-server may land in build/bin/ or build/tools/rpc/ depending on version.
+RUN set -e; \
+    echo "=== built executables ===" && find /llama.cpp/build -type f -executable | sort; \
+    cp "$(find /llama.cpp/build -type f -name 'llama-server'     | head -1)" /usr/local/bin/llama-server; \
+    cp "$(find /llama.cpp/build -type f -name 'llama-rpc-server' | head -1)" /usr/local/bin/llama-rpc-server; \
+    echo "staged: $(ls -lh /usr/local/bin/llama-server /usr/local/bin/llama-rpc-server)"
 
 
 # ── Stage 2: runtime ─────────────────────────────────────────────────────────
@@ -43,8 +52,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     dnsutils \
   && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /llama.cpp/build/bin/llama-server     /usr/local/bin/llama-server
-COPY --from=builder /llama.cpp/build/bin/llama-rpc-server /usr/local/bin/llama-rpc-server
+COPY --from=builder /usr/local/bin/llama-server     /usr/local/bin/llama-server
+COPY --from=builder /usr/local/bin/llama-rpc-server /usr/local/bin/llama-rpc-server
 
 RUN chmod +x /usr/local/bin/llama-server /usr/local/bin/llama-rpc-server \
  && useradd -u 1000 -m -s /bin/bash llama
