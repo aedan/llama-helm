@@ -31,6 +31,12 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
 
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+
       initContainers:
         # ── Step 1: wait for the active model file ────────────────────────────
         # The model-loader Job (post-install/post-upgrade hook) downloads models
@@ -38,6 +44,10 @@ spec:
         # model file is present so llama-server never starts against a missing file.
         - name: model-wait
           image: busybox:1.36
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           command:
             - /bin/sh
             - -c
@@ -60,6 +70,10 @@ spec:
         - name: rpc-discover
           image: {{ .Values.kubectlImage.repository }}:{{ .Values.kubectlImage.tag }}
           imagePullPolicy: {{ .Values.kubectlImage.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           command:
             - /bin/sh
             - -c
@@ -111,6 +125,10 @@ spec:
         - name: llama-server
           image: {{ include "llama-cpp.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           ports:
             - name: http
               containerPort: {{ .Values.server.port }}

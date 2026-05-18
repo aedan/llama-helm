@@ -46,7 +46,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY --from=builder /llama.cpp/build/bin/llama-server     /usr/local/bin/llama-server
 COPY --from=builder /llama.cpp/build/bin/llama-rpc-server /usr/local/bin/llama-rpc-server
 
-RUN chmod +x /usr/local/bin/llama-server /usr/local/bin/llama-rpc-server
+RUN chmod +x /usr/local/bin/llama-server /usr/local/bin/llama-rpc-server \
+ && useradd -u 1000 -m -s /bin/bash llama
+
+USER 1000
 
 EXPOSE 8080
 EXPOSE 50052

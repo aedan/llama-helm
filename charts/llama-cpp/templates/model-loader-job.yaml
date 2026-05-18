@@ -13,6 +13,8 @@ metadata:
     helm.sh/hook: post-install,post-upgrade
     helm.sh/hook-delete-policy: before-hook-creation
     helm.sh/hook-weight: "0"
+    # Allow 24 h for large model downloads before helm considers this a failure.
+    helm.sh/hook-timeout: "86400"
 spec:
   # 24-hour deadline to accommodate large models on slow links.
   activeDeadlineSeconds: 86400
@@ -25,6 +27,12 @@ spec:
     spec:
       restartPolicy: OnFailure
 
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 100
+        seccompProfile:
+          type: RuntimeDefault
+
       nodeSelector:
         {{- toYaml .Values.nodeSelector | nindent 8 }}
       {{- with .Values.tolerations }}
@@ -35,6 +43,10 @@ spec:
       containers:
         - name: downloader
           image: curlimages/curl:8.7.1
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           command:
             - /bin/sh
             - -c

@@ -28,10 +28,20 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
 
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+
       containers:
         - name: rpc-server
           image: {{ include "llama-cpp.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           command:
             - llama-rpc-server
           args:
