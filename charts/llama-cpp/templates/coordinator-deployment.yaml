@@ -8,6 +8,10 @@ metadata:
     app.kubernetes.io/component: coordinator
 spec:
   replicas: {{ .Values.coordinator.replicas }}
+  # Recreate terminates the old pod (releasing the RWO PVC) before starting
+  # the new one, preventing multi-node attachment conflicts on upgrades.
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       {{- include "llama-cpp.selectorLabels" . | nindent 6 }}
