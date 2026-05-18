@@ -24,6 +24,7 @@ WORKDIR /llama.cpp
 # cmake reorganisations — only the two required binaries are copied below.
 RUN cmake -B build \
       -DCMAKE_BUILD_TYPE=Release \
+      -DBUILD_SHARED_LIBS=OFF \
       -DGGML_NATIVE=OFF \
       -DGGML_AVX=ON \
       -DGGML_AVX2=ON \
