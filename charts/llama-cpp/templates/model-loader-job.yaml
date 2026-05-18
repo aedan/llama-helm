@@ -103,9 +103,17 @@ spec:
           volumeMounts:
             - name: model-store
               mountPath: /models
+            - name: tmp
+              mountPath: /tmp
+            - name: home
+              mountPath: /home/curl
 
       volumes:
         - name: model-store
           persistentVolumeClaim:
             claimName: {{ include "llama-cpp.fullname" . }}-models
+        - name: tmp
+          emptyDir: {}
+        - name: home
+          emptyDir: {}
 {{- end }}
