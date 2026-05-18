@@ -3,6 +3,30 @@ entries:
   llama-cpp:
   - apiVersion: v2
     appVersion: latest
+    created: "2026-05-18T04:55:55.183470838Z"
+    description: 'llama.cpp inference server with multi-node CPU tensor parallelism
+      via the RPC backend.  Designed for x86_64 Linux nodes (e.g. HPE DL380 Gen9)
+      with no discrete GPU.  All llama.cpp nodes are selected by the label llama.cpp=enabled. '
+    digest: 78aac51b60caa51ec27ccad42681a3623c3d8383c798dc85f783e4a3a256aa7e
+    keywords:
+    - llm
+    - inference
+    - llama
+    - cpu
+    - rpc
+    maintainers:
+    - name: aedan
+      url: https://github.com/aedan
+    name: llama-cpp
+    sources:
+    - https://github.com/aedan/llama-helm
+    - https://github.com/ggerganov/llama.cpp
+    type: application
+    urls:
+    - https://github.com/aedan/llama-helm/releases/download/llama-cpp-0.10.0/llama-cpp-0.10.0.tgz
+    version: 0.10.0
+  - apiVersion: v2
+    appVersion: latest
     created: "2026-05-18T04:44:30.101989805Z"
     description: 'llama.cpp inference server with multi-node CPU tensor parallelism
       via the RPC backend.  Designed for x86_64 Linux nodes (e.g. HPE DL380 Gen9)
@@ -97,4 +121,4 @@ entries:
     urls:
     - https://github.com/aedan/llama-helm/releases/download/llama-cpp-0.6.0/llama-cpp-0.6.0.tgz
     version: 0.6.0
-generated: "2026-05-18T04:44:30.102005043Z"
+generated: "2026-05-18T04:55:55.183495775Z"
