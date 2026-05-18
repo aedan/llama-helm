@@ -112,8 +112,10 @@ models:
     # Default sized for the Qwen3.6-27B default plus room for extras.
     # Increase if you add large models to .extra.
     size: "200Gi"
-    storageClass: ""
-    accessMode: ReadWriteOnce
+    # Use a RWX storage class so coordinator and model-loader can mount
+    # the volume from different nodes simultaneously.
+    storageClass: "general-multi-attach"
+    accessMode: ReadWriteMany
 
 # ── llama-server parameters ────────────────────────────────────────────────
 server:

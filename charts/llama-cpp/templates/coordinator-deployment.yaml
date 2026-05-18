@@ -175,6 +175,8 @@ spec:
               mountPath: /models
             - name: rpc-data
               mountPath: /tmp/rpc
+            - name: tmp
+              mountPath: /tmp
 
           readinessProbe:
             httpGet:
@@ -199,4 +201,6 @@ spec:
           persistentVolumeClaim:
             claimName: {{ include "llama-cpp.fullname" . }}-models
         - name: rpc-data
+          emptyDir: {}
+        - name: tmp
           emptyDir: {}
